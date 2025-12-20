@@ -1,41 +1,40 @@
-这里主要描述从索引服务器(VITE_PINPET_API_URL=https://server.ai-hello.cn)
-获取的数据该怎么计算并显示.
-所有的代码都可以用 node xxx.js 直接运行没有依赖,方便查看与喂ai.
+# PIN Server Demo
 
+> 从索引服务器获取持仓数据的计算与展示示例
+> 所有示例代码可直接运行：`node xxx.js`
 
----------------------------酷酷的分割线-----------------------------------------------
+## 📊 示例代码
 
-1. long sell 持仓的订单
-示例代码:  node demo-active-positions.js
+### 1️⃣ 当前持仓订单
+```bash
+node demo-active-positions.js
+```
 
-UI描述: 
-====  Position选项卡 持仓部份的说明  =====
-图标      币名/SOL        总盈亏(USDT)
-        MyCoin/SOL         35.1(+4.5%)
+**UI 展示字段：**
+- 币名/交易对：`MyCoin/SOL`
+- 总盈亏：`35.1 USDT (+4.5%)`
+- 开仓时间：`5s | 1m | 3h | 2d`
+- 方向/杠杆：`Long/Short x2-x5`
+- 保证金：`103.1 USDT`
+- 未实现盈亏：`60.5 USDT (20.1%)`
 
-开仓时间                方向          杠杆倍数  
-5s | 1m | 3h | 2d      Long|sell      x2 x5
+---
 
-保证金(Margin USDT)   未平仓持仓盈亏USDT    未平仓持仓盈亏%
-103.1                 60.5                  20.1%  
+### 2️⃣ 历史订单记录
+```bash
+node demo-history-positions.js
+```
 
+**UI 展示字段：**
+- 币名/交易对：`MyCoin/SOL`
+- 订单编号：`#2`
+- 平仓时间：`5s | 1m | 2day`
+- 方向：`Long/Short`
+- 已实现盈亏：`60.5 USDT (20.1%)`
 
+---
 
+## 🔧 配置
 
-
----------------------------酷酷的分割线-----------------------------------------------
-
-2. 历史订单数据获取与计算   
-
-示例代码:  node demo-history-positions.js
-
-====  Position选项卡 历史订单部份的说明  =====
-图标      币名/SOL    
-        MyCoin/SOL    
-订单编号: 2
-平仓时间                方向        
-5s | 1m | 2day      Long|sell      
-已平仓持仓盈亏USDT    已平仓持仓盈亏%
-60.5                  20.1%  
-
----------------------------酷酷的分割线-----------------------------------------------
+索引服务器地址：`https://server.ai-hello.cn`
+环境变量：`VITE_PINPET_API_URL`
