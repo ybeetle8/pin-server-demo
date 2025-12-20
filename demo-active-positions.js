@@ -216,6 +216,47 @@ function formatOpenTime(startTime) {
 }
 
 /**
+ * 计算杠杆倍数
+ * @param {object} position - 持仓订单数据
+ * @returns {number} - 杠杆倍数（整数，四舍五入）
+ */
+function calculateLeverage(position) {
+  // 价格精度常量 (10^23)
+  const PRICE_DECIMALS = new Decimal(10).pow(23);
+
+  // 将价格转换为 Decimal 并除以精度
+  const openPrice = new Decimal(position.open_price).div(PRICE_DECIMALS);
+  const lockLpStartPrice = new Decimal(position.lock_lp_start_price).div(PRICE_DECIMALS);
+
+  let stopLossRatio;
+
+  if (position.order_type === 1) {
+    // 做空 (SHORT, order_type=1): 止损比例 = (lock_lp_start_price - open_price) / open_price
+    stopLossRatio = lockLpStartPrice.minus(openPrice).div(openPrice);
+  } else if (position.order_type === 2) {
+    // 做多 (LONG, order_type=2): 止损比例 = (open_price - lock_lp_start_price) / open_price
+    stopLossRatio = openPrice.minus(lockLpStartPrice).div(openPrice);
+  } else {
+    // 未知订单类型
+    return 0;
+  }
+
+  // 取绝对值，因为止损比例可能是负数
+  stopLossRatio = stopLossRatio.abs();
+
+  // 杠杆倍数 = 1 / 止损比例
+  const leverage = new Decimal(1).div(stopLossRatio);
+  const leverageNum = leverage.toNumber();
+
+  // 如果杠杆倍数小于 1，保留 1 位小数；否则四舍五入取整
+  if (leverageNum < 1) {
+    return Math.round(leverageNum * 10) / 10;  // 保留 1 位小数
+  } else {
+    return Math.round(leverageNum);  // 四舍五入取整
+  }
+}
+
+/**
  * 计算持仓数据（统一入口）
  */
 function calculatePositionData(sdk, position, solPrice) {
@@ -238,12 +279,14 @@ function calculatePositionData(sdk, position, solPrice) {
   }
 
   const solPriceDecimal = new Decimal(solPrice);
+  const leverage = calculateLeverage(position);  // 计算杠杆倍数
 
   return {
     orderId: position.order_id,                                      // 订单编号
     direction: directionLabel,                                        // 方向标签（做多/做空）
     orderType: position.order_type,                                   // 订单类型（1=做多，2=做空）
     openTime: formatOpenTime(position.start_time),                   // 开仓时间（格式化）
+    leverage: leverage,                                               // 杠杆倍数
     marginInSol: result.marginSol.toNumber(),                        // 保证金（SOL）
     marginInUSDT: result.marginSol.mul(solPriceDecimal).toNumber(),  // 保证金（USDT）
     netProfitInSol: result.netProfit.toNumber(),                     // 净收益（SOL）
@@ -266,6 +309,7 @@ function formatDisplay(data) {
   console.log('订单编号:', data.orderId);
   console.log('方向:', data.direction);
   console.log('开仓时间:', data.openTime);
+  console.log('杠杆倍数:', `x${data.leverage}`);
   //console.log('Order Type:', data.orderType);
   //console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
