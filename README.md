@@ -11,6 +11,7 @@ node demo-active-positions.js
 ```
 
 **UI 展示字段：**
+- 订单编号：`#2`
 - 币名/交易对：`MyCoin/SOL`
 - 总盈亏：`35.1 USDT (+4.5%)`
 - 开仓时间：`5s | 1m | 3h | 2d`
@@ -26,8 +27,8 @@ node demo-history-positions.js
 ```
 
 **UI 展示字段：**
-- 币名/交易对：`MyCoin/SOL`
 - 订单编号：`#2`
+- 币名/交易对：`MyCoin/SOL`
 - 平仓时间：`5s | 1m | 2day`
 - 方向：`Long/Short`
 - 已实现盈亏：`60.5 USDT (20.1%)`
