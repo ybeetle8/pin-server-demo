@@ -185,6 +185,37 @@ function calculateShortProfit(sdk, position) {
 }
 
 /**
+ * 格式化开仓时间
+ * @param {number} startTime - 开仓时间戳（秒级）
+ * @returns {string} - 格式化后的时间字符串（如: "5s", "30m", "3h", "2d"）
+ */
+function formatOpenTime(startTime) {
+  // 获取当前时间戳（秒）
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  // 计算持续时间（秒）
+  const duration = currentTime - startTime;
+
+  // 小于 60 秒 -> 显示为秒
+  if (duration < 60) {
+    return `${Math.floor(duration)}s`;
+  }
+
+  // 小于 60 分钟 -> 显示为分钟
+  if (duration < 3600) {
+    return `${Math.floor(duration / 60)}m`;
+  }
+
+  // 小于 24 小时 -> 显示为小时
+  if (duration < 86400) {
+    return `${Math.floor(duration / 3600)}h`;
+  }
+
+  // 大于等于 24 小时 -> 显示为天
+  return `${Math.floor(duration / 86400)}d`;
+}
+
+/**
  * 计算持仓数据（统一入口）
  */
 function calculatePositionData(sdk, position, solPrice) {
@@ -212,6 +243,7 @@ function calculatePositionData(sdk, position, solPrice) {
     orderId: position.order_id,                                      // 订单编号
     direction: directionLabel,                                        // 方向标签（做多/做空）
     orderType: position.order_type,                                   // 订单类型（1=做多，2=做空）
+    openTime: formatOpenTime(position.start_time),                   // 开仓时间（格式化）
     marginInSol: result.marginSol.toNumber(),                        // 保证金（SOL）
     marginInUSDT: result.marginSol.mul(solPriceDecimal).toNumber(),  // 保证金（USDT）
     netProfitInSol: result.netProfit.toNumber(),                     // 净收益（SOL）
@@ -233,6 +265,7 @@ function formatDisplay(data) {
   console.log('\n----- 持仓数据 -----\n');
   console.log('订单编号:', data.orderId);
   console.log('方向:', data.direction);
+  console.log('开仓时间:', data.openTime);
   //console.log('Order Type:', data.orderType);
   //console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
