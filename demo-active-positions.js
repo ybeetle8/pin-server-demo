@@ -50,6 +50,12 @@ async function getSolPrice() {
   return httpsGet(url);
 }
 
+// 获取代币信息（包含最新价格）
+async function getTokenInfo(mint) {
+  const url = `${SERVER_URL}/api/tokens/mint/${mint}`;
+  return httpsGet(url);
+}
+
 /**
  * 计算做多 (LONG) 仓位盈亏
  * order_type = 1 是做多 (LONG)
@@ -83,8 +89,8 @@ function calculateLongProfit(sdk, position) {
     // 2. 毛利收益 = 平仓收入 + 保证金 - 借款
     const grossProfitSol = currentSellIncomeSol.plus(marginSol).minus(borrowSol);
 
-    // 3. 净收益 = 毛利 - 保证金 + 已实现收益
-    const netProfitSol = grossProfitSol.minus(marginSol).plus(realizedSol);
+    // 3. 净收益 = 毛利 - 保证金 
+    const netProfitSol = grossProfitSol.minus(marginSol)
 
     // 4. 盈亏百分比 = (净收益 / 保证金) * 100
     const profitPercentage = netProfitSol.div(marginSol).mul(100);
@@ -94,13 +100,14 @@ function calculateLongProfit(sdk, position) {
     const currentPrice = new Decimal(latest_price);
     const stopLossPercentage = currentPrice.minus(startPrice).div(startPrice).mul(100);
 
+    // 返回做多仓位的计算结果
     return {
-      grossProfit: grossProfitSol,
-      netProfit: netProfitSol,
-      profitPercentage: profitPercentage,
-      stopLossPercentage: stopLossPercentage,
-      realizedSol: realizedSol,
-      marginSol: marginSol
+      grossProfit: grossProfitSol,           // 毛利收益（平仓收入 + 保证金 - 借款）
+      netProfit: netProfitSol,               // 净收益（毛利 - 保证金）
+      profitPercentage: profitPercentage,     // 盈亏百分比（净收益 / 保证金 * 100）
+      stopLossPercentage: stopLossPercentage, // 止损位百分比（(当前价格 - 开仓价格) / 开仓价格 * 100）
+      realizedSol: realizedSol,              // 已实现收益（SOL）
+      marginSol: marginSol                   // 保证金（SOL）
     };
   } catch (error) {
     console.error('做多盈亏计算错误:', error.message);
@@ -154,21 +161,22 @@ function calculateShortProfit(sdk, position) {
     // 4. 净收益 = 毛利 - 初始保证金
     const netProfitSol = grossProfitSol.minus(marginInitSol);
 
-    // 5. 盈亏百分比 = (已实现收益 + 净收益) / 初始保证金 * 100
-    const profitPercentage = realizedSol.plus(netProfitSol).div(marginInitSol).mul(100);
+    // 5. 盈亏百分比 = 净收益 / 初始保证金 * 100
+    const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
 
     // 6. 止损位百分比 = (开仓价格 - 当前价格) / 开仓价格 * 100
     const startPrice = new Decimal(lock_lp_start_price);
     const currentPrice = new Decimal(latest_price);
     const stopLossPercentage = startPrice.minus(currentPrice).div(startPrice).mul(100);
 
+    // 返回做空仓位的计算结果
     return {
-      grossProfit: grossProfitSol,
-      netProfit: netProfitSol,
-      profitPercentage: profitPercentage,
-      stopLossPercentage: stopLossPercentage,
-      realizedSol: realizedSol,
-      marginSol: marginSol
+      grossProfit: grossProfitSol,           // 毛利收益（解锁 SOL - 平仓成本）
+      netProfit: netProfitSol,               // 净收益（毛利 - 初始保证金）
+      profitPercentage: profitPercentage,     // 盈亏百分比（(已实现收益 + 净收益) / 初始保证金 * 100）
+      stopLossPercentage: stopLossPercentage, // 止损位百分比（(开仓价格 - 当前价格) / 开仓价格 * 100）
+      realizedSol: realizedSol,              // 已实现收益（SOL）
+      marginSol: marginSol                   // 当前保证金（SOL）
     };
   } catch (error) {
     console.error('做空盈亏计算错误:', error.message);
@@ -201,16 +209,17 @@ function calculatePositionData(sdk, position, solPrice) {
   const solPriceDecimal = new Decimal(solPrice);
 
   return {
-    direction: directionLabel,
-    orderType: position.order_type,
-    marginInSol: result.marginSol.toNumber(),
-    marginInUSDT: result.marginSol.mul(solPriceDecimal).toNumber(),
-    netProfitInSol: result.netProfit.toNumber(),
-    netProfitInUSDT: result.netProfit.mul(solPriceDecimal).toNumber(),
-    profitPercentage: result.profitPercentage.toNumber(),
-    stopLossPercentage: result.stopLossPercentage.toNumber(),
-    realizedInSol: result.realizedSol.toNumber(),
-    realizedInUSDT: result.realizedSol.mul(solPriceDecimal).toNumber()
+    orderId: position.order_id,                                      // 订单编号
+    direction: directionLabel,                                        // 方向标签（做多/做空）
+    orderType: position.order_type,                                   // 订单类型（1=做多，2=做空）
+    marginInSol: result.marginSol.toNumber(),                        // 保证金（SOL）
+    marginInUSDT: result.marginSol.mul(solPriceDecimal).toNumber(),  // 保证金（USDT）
+    netProfitInSol: result.netProfit.toNumber(),                     // 净收益（SOL）
+    netProfitInUSDT: result.netProfit.mul(solPriceDecimal).toNumber(), // 净收益（USDT）
+    profitPercentage: result.profitPercentage.toNumber(),             // 盈亏百分比
+    stopLossPercentage: result.stopLossPercentage.toNumber(),         // 止损位百分比
+    realizedInSol: result.realizedSol.toNumber(),                    // 已实现收益（SOL）
+    realizedInUSDT: result.realizedSol.mul(solPriceDecimal).toNumber() // 已实现收益（USDT）
   };
 }
 
@@ -222,13 +231,14 @@ function formatDisplay(data) {
   }
 
   console.log('\n----- 持仓数据 -----\n');
+  console.log('订单编号:', data.orderId);
   console.log('方向:', data.direction);
-  console.log('Order Type:', data.orderType);
-  console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
+  //console.log('Order Type:', data.orderType);
+  //console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
-  console.log('止损位 (%):', data.stopLossPercentage.toFixed(1) + '%');
-  console.log('已实现收益 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
-  console.log('持仓盈亏 (SOL):', (data.netProfitInSol >= 0 ? '+' : '') + data.netProfitInSol.toFixed(2));
+  //console.log('止损位 (%):', data.stopLossPercentage.toFixed(1) + '%');
+  //console.log('已实现收益 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
+  //console.log('持仓盈亏 (SOL):', (data.netProfitInSol >= 0 ? '+' : '') + data.netProfitInSol.toFixed(2));
   console.log('持仓盈亏 (USDT):', (data.netProfitInUSDT >= 0 ? '+' : '') + data.netProfitInUSDT.toFixed(2));
   console.log('持仓盈亏 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
 }
@@ -240,30 +250,28 @@ async function main() {
 
     // 1. 初始化 SDK
     console.log('初始化 SDK...');
-    const options = getDefaultOptions('LOCALNET');
-    options.defaultDataSource = 'fast';  // 使用快速 API 数据源
-    options.fastApiUrl = SERVER_URL;  // 使用我们的服务器地址
+    const options = getDefaultOptions('MAINNET');
+    options.defaultDataSource = 'fast';  // 快速源
     const connection = new Connection(options.solanaEndpoint, 'confirmed');
     const sdk = new PinPetSdk(connection, SPINPET_PROGRAM_ID, options);
     console.log('SDK 初始化完成');
 
-    // 2. 并行获取持仓和价格数据
-    const [positionData, priceData] = await Promise.all([
+    // 2. 并行获取持仓、价格和代币信息
+    const [positionData, priceData, tokenInfo] = await Promise.all([
       getPositions(),
-      getSolPrice()
+      getSolPrice(),
+      getTokenInfo(MINT_ADDRESS)
     ]);
 
     // 检查 API 响应是否成功
-    if (positionData.code !== 200 || priceData.code !== 200) {
+    if (positionData.code !== 200 || priceData.code !== 200 || tokenInfo.code !== 200) {
       throw new Error('API 请求失败');
     }
 
     const solPrice = priceData.data.price;
-    console.log(`\n当前 SOL 价格: $${solPrice}`);
+    const latestPrice = tokenInfo.data.latest_price;  // 从代币信息中获取最新价格
 
-    // 3. 使用 SDK 获取代币最新价格
-    console.log('获取代币最新价格...');
-    const latestPrice = await sdk.data.price(MINT_ADDRESS);
+    console.log(`\n当前 SOL 价格: $${solPrice}`);
     console.log(`代币最新价格 (u128): ${latestPrice}`);
 
     // 4. 处理持仓数据
