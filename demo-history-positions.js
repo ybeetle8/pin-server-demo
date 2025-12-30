@@ -8,8 +8,8 @@ const { Connection } = require('@solana/web3.js');
 
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
-const USER_ADDRESS = 'EU1a9TcZ4XkmbAxXKmqXke7FVLiPy1wtTv77jBEfSSBo';  // 用户地址
-const MINT_ADDRESS = '2cy4g7MTCEKm4buXktf5YCvmrXuSp5QW9jXcXNMqVmJN';  // mint 值
+const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
+const MINT_ADDRESS = 'HPNwCRZFg2NR7zcq33ntfLRG2q3k2qeNT7c5HFmJkd7c';  // mint 值
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
@@ -189,6 +189,8 @@ function formatDisplay(data) {
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
   console.log('已实现盈亏 (USDT):', (data.realizedInUSDT >= 0 ? '+' : '') + data.realizedInUSDT.toFixed(2));
   console.log('已实现盈亏比例 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
+  console.log('已实现盈亏 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
+
 }
 
 // 主函数

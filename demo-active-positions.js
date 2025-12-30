@@ -8,8 +8,9 @@ const { Connection } = require('@solana/web3.js');
 
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
-const USER_ADDRESS = 'EU1a9TcZ4XkmbAxXKmqXke7FVLiPy1wtTv77jBEfSSBo';  // 用户地址
-const MINT_ADDRESS = '2cy4g7MTCEKm4buXktf5YCvmrXuSp5QW9jXcXNMqVmJN';  // mint 值
+const USER_ADDRESS = '2uchzhSa3u5Teb6ZLFUUa1f4PhNgSrKoC5ZPJcm7R3QY';  // 用户地址
+const MINT_ADDRESS = 'GLcZ6cT68U7LDwWxLrFVXiJhzkLmHo1NMHe29GtJW4sm';  // mint 值
+
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
