@@ -9,7 +9,7 @@ const { Connection } = require('@solana/web3.js');
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
 const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
-const MINT_ADDRESS = 'Ff6N16aKa4WR2tgxRv4NhcFKrn8wRj9mei7GxWpMV127';  // mint 值
+const MINT_ADDRESS = 'FD1UUFo8vaNbtJHKnyDvUX6DxRgvJtGQdNtS7EG8B7DV';  // mint 值
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
@@ -122,13 +122,14 @@ function calculateLeverage(order) {
 
 /**
  * 计算做多订单的盈利
+ * @param {object} sdk - PinPetSdk 实例
  * @param {object} order - 订单数据
  * @param {object} close_info - 平仓信息
  * @param {Decimal} marginInitSol - 初始保证金（SOL，Decimal 类型）
  * @param {Decimal} solPriceDecimal - SOL 价格（USDT，Decimal 类型）
  * @returns {object} - 包含 realizedSol, realizedUSDT, profitPercentage
  */
-function calculateLongProfit(order, close_info, marginInitSol, solPriceDecimal) {
+function calculateLongProfit(sdk, order, close_info, marginInitSol, solPriceDecimal) {
   // close_reason = 2: 强制清算时,收益直接为 0
   if (close_info.close_reason === 2) {
     return {
@@ -138,28 +139,77 @@ function calculateLongProfit(order, close_info, marginInitSol, solPriceDecimal) 
     };
   }
 
-  // 其他情况按原算法计算
-  const realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
-  const realizedUSDT = realizedSol.mul(solPriceDecimal);
-  // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
-  const profitPercentage = realizedSol.div(marginInitSol).mul(100);
+  // close_reason = 4, 5: 平半仓，收益 = realized_sol_amount - realized_sol_amount_before
+  if (close_info.close_reason === 4 || close_info.close_reason === 5) {
+    // 计算实际收益 (SOL)
+    const realizedSolAmount = new Decimal(order.realized_sol_amount || 0);
+    const realizedSolAmountBefore = new Decimal(close_info.realized_sol_amount_before || 0);
+    const netProfitSol = realizedSolAmount.minus(realizedSolAmountBefore).div(LAMPORTS_PER_SOL);
+
+    // 盈亏百分比 = (净收益 / 初始保证金) * 100
+    const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
+
+    // 已实现盈亏（USDT）
+    const realizedUSDT = netProfitSol.mul(solPriceDecimal);
+
+    return {
+      realizedSol: netProfitSol,
+      realizedUSDT: realizedUSDT,
+      profitPercentage: profitPercentage
+    };
+  }
+
+  // close_reason = 1, 3: 用户主动平仓、到期自动平仓，使用 SDK 计算
+  const {
+    lock_lp_token_amount,
+    borrow_amount,
+    realized_sol_amount
+  } = order;
+
+  const borrowSol = new Decimal(borrow_amount).div(LAMPORTS_PER_SOL);
+  const realizedSol = new Decimal(realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+
+  // 使用 close_price_before 作为平仓价格
+  const closePrice = close_info.close_price_before;
+
+  // 1. 用 sdk.curve.sellFromPriceWithTokenInput 计算平仓收入
+  const sellResult = sdk.curve.sellFromPriceWithTokenInput(closePrice, lock_lp_token_amount);
+
+  let currentSellIncomeSol;
+  if (Array.isArray(sellResult)) {
+    currentSellIncomeSol = new Decimal(sellResult[1].toString()).div(LAMPORTS_PER_SOL);
+  } else {
+    currentSellIncomeSol = new Decimal(sellResult.toString()).div(LAMPORTS_PER_SOL);
+  }
+
+  // 2. 毛利收益 = 平仓收入 + 初始保证金 - 借款
+  const grossProfitSol = currentSellIncomeSol.plus(marginInitSol).minus(borrowSol);
+
+  const netProfitSol = grossProfitSol
+
+  // 4. 盈亏百分比 = (净收益 / 初始保证金) * 100
+  const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
+
+  // 已实现盈亏（USDT）
+  const realizedUSDT = netProfitSol.mul(solPriceDecimal);
 
   return {
-    realizedSol,
-    realizedUSDT,
-    profitPercentage
+    realizedSol: netProfitSol,
+    realizedUSDT: realizedUSDT,
+    profitPercentage: profitPercentage
   };
 }
 
 /**
  * 计算做空订单的盈利
+ * @param {object} sdk - PinPetSdk 实例
  * @param {object} order - 订单数据
  * @param {object} close_info - 平仓信息
  * @param {Decimal} marginInitSol - 初始保证金（SOL，Decimal 类型）
  * @param {Decimal} solPriceDecimal - SOL 价格（USDT，Decimal 类型）
  * @returns {object} - 包含 realizedSol, realizedUSDT, profitPercentage
  */
-function calculateShortProfit(order, close_info, marginInitSol, solPriceDecimal) {
+function calculateShortProfit(sdk, order, close_info, marginInitSol, solPriceDecimal) {
   // close_reason = 2: 强制清算时,收益直接为 0
   if (close_info.close_reason === 2) {
     return {
@@ -169,27 +219,86 @@ function calculateShortProfit(order, close_info, marginInitSol, solPriceDecimal)
     };
   }
 
-  // 其他情况按原算法计算
-  const realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
-  const realizedUSDT = realizedSol.mul(solPriceDecimal);
-  // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
-  const profitPercentage = realizedSol.div(marginInitSol).mul(100);
+  // close_reason = 4, 5: 平半仓，收益 = realized_sol_amount - realized_sol_amount_before
+  if (close_info.close_reason === 4 || close_info.close_reason === 5) {
+    // 计算实际收益 (SOL)
+    const realizedSolAmount = new Decimal(order.realized_sol_amount || 0);
+    const realizedSolAmountBefore = new Decimal(close_info.realized_sol_amount_before || 0);
+    const netProfitSol = realizedSolAmount.minus(realizedSolAmountBefore).div(LAMPORTS_PER_SOL);
+
+    // 盈亏百分比 = (净收益 / 初始保证金) * 100
+    const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
+
+    // 已实现盈亏（USDT）
+    const realizedUSDT = netProfitSol.mul(solPriceDecimal);
+
+    return {
+      realizedSol: netProfitSol,
+      realizedUSDT: realizedUSDT,
+      profitPercentage: profitPercentage
+    };
+  }
+
+  // close_reason = 1, 3: 用户主动平仓、到期自动平仓，使用 SDK 计算
+  const {
+    lock_lp_start_price,
+    lock_lp_token_amount,
+    realized_sol_amount
+  } = order;
+
+  const realizedSol = new Decimal(realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+
+  // 使用 close_price_before 作为平仓价格
+  const closePrice = close_info.close_price_before;
+
+  // 1. 用 buyFromPriceWithTokenOutput 计算当前平仓成本
+  const currentBuyResult = sdk.curve.buyFromPriceWithTokenOutput(closePrice, lock_lp_token_amount);
+
+  let currentBuyCostSol;
+  if (Array.isArray(currentBuyResult)) {
+    currentBuyCostSol = new Decimal(currentBuyResult[1].toString()).div(LAMPORTS_PER_SOL);
+  } else {
+    currentBuyCostSol = new Decimal(currentBuyResult.toString()).div(LAMPORTS_PER_SOL);
+  }
+
+  // 2. 用 buyFromPriceWithTokenOutput 计算解锁获得的 SOL
+  const unlockBuyResult = sdk.curve.buyFromPriceWithTokenOutput(lock_lp_start_price, lock_lp_token_amount);
+
+  let unlockSol;
+  if (Array.isArray(unlockBuyResult)) {
+    unlockSol = new Decimal(unlockBuyResult[1].toString()).div(LAMPORTS_PER_SOL);
+  } else {
+    unlockSol = new Decimal(unlockBuyResult.toString()).div(LAMPORTS_PER_SOL);
+  }
+
+  // 3. 毛利收益 = 解锁 SOL - 平仓成本
+  const grossProfitSol = unlockSol.minus(currentBuyCostSol);
+
+  // 4. 净收益 = 毛利 - 初始保证金 - 已实现收益
+  const netProfitSol = grossProfitSol // grossProfitSol.minus(marginInitSol).minus(realizedSol);
+
+  // 5. 盈亏百分比 = 净收益 / 初始保证金 * 100
+  const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
+
+  // 已实现盈亏（USDT）
+  const realizedUSDT = netProfitSol.mul(solPriceDecimal);
 
   return {
-    realizedSol,
-    realizedUSDT,
-    profitPercentage
+    realizedSol: netProfitSol,
+    realizedUSDT: realizedUSDT,
+    profitPercentage: profitPercentage
   };
 }
 
 /**
  * 计算历史订单数据
+ * @param {object} sdk - PinPetSdk 实例
  * @param {object} record - 历史订单记录
  * @param {number} solPrice - SOL 价格（USDT）
  * @returns {object} - 计算后的订单数据
  */
-function calculateHistoryData(record, solPrice) {
-  const { order, close_info, direction } = record;
+function calculateHistoryData(sdk, record, solPrice) {
+  const { order, close_info } = record;
 
   // order_type 决定方向
   // order_type = 1: 做多 (LONG)
@@ -215,9 +324,9 @@ function calculateHistoryData(record, solPrice) {
   // 根据订单类型调用对应的盈利计算函数
   let profitResult;
   if (isLong) {
-    profitResult = calculateLongProfit(order, close_info, marginInitSol, solPriceDecimal);
+    profitResult = calculateLongProfit(sdk, order, close_info, marginInitSol, solPriceDecimal);
   } else {
-    profitResult = calculateShortProfit(order, close_info, marginInitSol, solPriceDecimal);
+    profitResult = calculateShortProfit(sdk, order, close_info, marginInitSol, solPriceDecimal);
   }
 
   const { realizedSol, realizedUSDT, profitPercentage } = profitResult;
@@ -278,7 +387,7 @@ function formatDisplay(data) {
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
   console.log('平仓原因:', getCloseReasonLabel(data.closeReason));
   console.log('已实现盈亏 (USDT):', (data.realizedInUSDT >= 0 ? '+' : '') + data.realizedInUSDT.toFixed(2));
-  console.log('已实现盈亏比例 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
+  //console.log('已实现盈亏比例 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
   console.log('已实现盈亏 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
 
 }
@@ -288,7 +397,15 @@ async function main() {
   try {
     console.log('正在获取历史订单数据...');
 
-    // 1. 并行获取历史订单和 SOL 价格
+    // 1. 初始化 SDK
+    console.log('初始化 SDK...');
+    const options = getDefaultOptions('MAINNET');
+    options.defaultDataSource = 'fast';  // 快速源
+    const connection = new Connection(options.solanaEndpoint, 'confirmed');
+    const sdk = new PinPetSdk(connection, SPINPET_PROGRAM_ID, options);
+    console.log('SDK 初始化完成');
+
+    // 2. 并行获取历史订单和 SOL 价格
     const [historyData, priceData] = await Promise.all([
       getHistoryPositions(),
       getSolPrice()
@@ -302,7 +419,7 @@ async function main() {
     const solPrice = priceData.data.price;
     console.log(`\n当前 SOL 价格: $${solPrice}`);
 
-    // 2. 处理历史订单数据
+    // 3. 处理历史订单数据
     if (historyData.data.records && historyData.data.records.length > 0) {
       console.log(`\n共找到 ${historyData.data.total} 条历史订单`);
 
@@ -313,7 +430,7 @@ async function main() {
         console.log(`\n===== 历史订单 #${i + 1} =====`);
 
         // 计算并显示
-        const calculatedData = calculateHistoryData(record, solPrice);
+        const calculatedData = calculateHistoryData(sdk, record, solPrice);
         formatDisplay(calculatedData);
       }
     } else {

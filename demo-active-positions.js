@@ -9,7 +9,7 @@ const { Connection } = require('@solana/web3.js');
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
 const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
-const MINT_ADDRESS = 'Ff6N16aKa4WR2tgxRv4NhcFKrn8wRj9mei7GxWpMV127';  // mint 值
+const MINT_ADDRESS = 'FD1UUFo8vaNbtJHKnyDvUX6DxRgvJtGQdNtS7EG8B7DV';  // mint 值
 
 
 // SOL 精度常量
@@ -203,10 +203,10 @@ function calculateShortProfit(sdk, position) {
     const grossProfitSol = unlockSol.minus(currentBuyCostSol);
 
     // 4. 净收益 = 毛利 - 初始保证金
-    const netProfitSol = grossProfitSol.minus(marginInitSol);
+    const netProfitSol = grossProfitSol.minus(marginSol);
 
     // 5. 盈亏百分比 = 净收益 / 初始保证金 * 100
-    const profitPercentage = netProfitSol.div(marginInitSol).mul(100);
+    const profitPercentage = netProfitSol.div(marginSol).mul(100);
 
     // 6. 止损位百分比 = (开仓价格 - 当前价格) / 开仓价格 * 100
     const startPrice = new Decimal(lock_lp_start_price);
