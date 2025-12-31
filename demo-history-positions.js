@@ -9,7 +9,7 @@ const { Connection } = require('@solana/web3.js');
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
 const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
-const MINT_ADDRESS = '3J3UV44QReeDfgq6t5D2zHpKQbxU4mBWNHGW5LoBcsSg';  // mint 值
+const MINT_ADDRESS = 'B9ziVaRwmoSeYY8a4ChpRoAYeMtuaUKogLoeFxH8r3L4';  // mint 值
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
@@ -137,17 +137,35 @@ function calculateHistoryData(record, solPrice) {
 
   // 使用 Decimal.js 进行高精度计算
   const marginInitSol = new Decimal(order.margin_init_sol_amount).div(LAMPORTS_PER_SOL);
-  const realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
   const solPriceDecimal = new Decimal(solPrice);
 
   // 计算杠杆倍数
   const leverage = calculateLeverage(order);
 
-  // 已实现盈亏（USDT）
-  const realizedUSDT = realizedSol.mul(solPriceDecimal);
+  // 已实现盈亏（SOL 和 USDT）
+  let realizedSol;
+  let realizedUSDT;
+  let profitPercentage;
 
-  // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
-  const profitPercentage = realizedSol.div(marginInitSol).mul(100);
+  // close_reason 说明:
+  // 1: 用户主动平仓 / User close
+  // 2: 强制清算 / Forced liquidation
+  // 3: 到期自动平仓 / Expired close
+  // 4: 用户主动平半仓 / User half-close
+  // 5: 到期平半仓 / Expired half-close
+
+  if (close_info.close_reason === 2) {
+    // 强制清算时,收益直接为 0
+    realizedSol = new Decimal(0);
+    realizedUSDT = new Decimal(0);
+    profitPercentage = new Decimal(0);
+  } else {
+    // 其他情况按原算法计算
+    realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+    realizedUSDT = realizedSol.mul(solPriceDecimal);
+    // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
+    profitPercentage = realizedSol.div(marginInitSol).mul(100);
+  }
 
   // 保证金（USDT）
   const marginUSDT = marginInitSol.mul(solPriceDecimal);
@@ -173,6 +191,22 @@ function calculateHistoryData(record, solPrice) {
 }
 
 /**
+ * 获取平仓原因说明
+ * @param {number} closeReason - 平仓原因代码
+ * @returns {string} - 平仓原因说明
+ */
+function getCloseReasonLabel(closeReason) {
+  const reasons = {
+    1: '用户主动平仓',
+    2: '强制清算',
+    3: '到期自动平仓',
+    4: '用户主动平半仓',
+    5: '到期平半仓'
+  };
+  return reasons[closeReason] || '未知原因';
+}
+
+/**
  * 格式化显示历史订单输出
  */
 function formatDisplay(data) {
@@ -187,6 +221,7 @@ function formatDisplay(data) {
   console.log('持仓时间:', data.holdingTime);
   console.log('杠杆倍数:', `x${data.leverage}`);
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
+  console.log('平仓原因:', getCloseReasonLabel(data.closeReason));
   console.log('已实现盈亏 (USDT):', (data.realizedInUSDT >= 0 ? '+' : '') + data.realizedInUSDT.toFixed(2));
   console.log('已实现盈亏比例 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
   console.log('已实现盈亏 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
