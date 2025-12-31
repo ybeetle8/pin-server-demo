@@ -8,8 +8,8 @@ const { Connection } = require('@solana/web3.js');
 
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
-const USER_ADDRESS = '2uchzhSa3u5Teb6ZLFUUa1f4PhNgSrKoC5ZPJcm7R3QY';  // 用户地址
-const MINT_ADDRESS = 'GLcZ6cT68U7LDwWxLrFVXiJhzkLmHo1NMHe29GtJW4sm';  // mint 值
+const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
+const MINT_ADDRESS = '3J3UV44QReeDfgq6t5D2zHpKQbxU4mBWNHGW5LoBcsSg';  // mint 值
 
 
 // SOL 精度常量
@@ -63,43 +63,86 @@ async function getTokenInfo(mint) {
  */
 function calculateLongProfit(sdk, position) {
   try {
+    console.log('\n========== 做多 (LONG) 盈亏计算过程 ==========\n');
+
     const {
       latest_price,
       lock_lp_start_price,
       lock_lp_token_amount,
+      margin_init_sol_amount,
       margin_sol_amount,
       borrow_amount,
       realized_sol_amount
+      
     } = position;
+
+    console.log('原始数据:');
+    console.log('  最新价格 (latest_price):', latest_price);
+    console.log('  开仓价格 (lock_lp_start_price):', lock_lp_start_price);
+    console.log('  锁定代币数量 (lock_lp_token_amount):', lock_lp_token_amount);
+    console.log('  保证金 (margin_sol_amount):', margin_sol_amount, 'lamports');
+    console.log('  借款金额 (borrow_amount):', borrow_amount, 'lamports');
+    console.log('  已实现收益 (realized_sol_amount):', realized_sol_amount || 0, 'lamports');
 
     // 使用 Decimal.js 进行高精度计算
     const marginSol = new Decimal(margin_sol_amount).div(LAMPORTS_PER_SOL);
     const borrowSol = new Decimal(borrow_amount).div(LAMPORTS_PER_SOL);
     const realizedSol = new Decimal(realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+    const marginInitSol = new Decimal(margin_init_sol_amount).div(LAMPORTS_PER_SOL);
+
+    console.log('\n转换为 SOL:');
+    console.log('  保证金 (marginSol):', marginSol.toString(), 'SOL');
+    console.log('  借款 (borrowSol):', borrowSol.toString(), 'SOL');
+    console.log('  已实现收益 (realizedSol):', realizedSol.toString(), 'SOL');
 
     // 1. 用 sdk.curve.sellFromPriceWithTokenInput 计算平仓收入
+    console.log('\n步骤 1: 计算平仓收入');
+    console.log('  调用 sdk.curve.sellFromPriceWithTokenInput(', latest_price, ',', lock_lp_token_amount, ')');
     const sellResult = sdk.curve.sellFromPriceWithTokenInput(latest_price, lock_lp_token_amount);
+    console.log('  sellResult 返回值:', sellResult);
 
     let currentSellIncomeSol;
     if (Array.isArray(sellResult)) {
+      console.log('  sellResult 是数组，取 sellResult[1]');
       currentSellIncomeSol = new Decimal(sellResult[1].toString()).div(LAMPORTS_PER_SOL);
     } else {
+      console.log('  sellResult 不是数组，直接使用');
       currentSellIncomeSol = new Decimal(sellResult.toString()).div(LAMPORTS_PER_SOL);
     }
+    console.log('  平仓收入 (currentSellIncomeSol):', currentSellIncomeSol.toString(), 'SOL');
 
     // 2. 毛利收益 = 平仓收入 + 保证金 - 借款
-    const grossProfitSol = currentSellIncomeSol.plus(marginSol).minus(borrowSol);
+    console.log('\n步骤 2: 计算毛利收益');
+    console.log('  公式: 毛利 = 平仓收入 + 保证金 - 借款');
+    console.log('  毛利 =', currentSellIncomeSol.toString(), '+', marginSol.toString(), '-', borrowSol.toString(), "减半:",borrowSol/2);
+    
+    const grossProfitSol = currentSellIncomeSol.plus(marginInitSol).minus(borrowSol) ;
+    console.log('  毛利收益 (grossProfitSol):', grossProfitSol.toString(), 'SOL');
 
-    // 3. 净收益 = 毛利 - 保证金 
+    // 3. 净收益 = 毛利 - 保证金
+    console.log('\n步骤 3: 计算净收益');
+    console.log('  公式: 净收益 = 毛利 - 保证金');
+    console.log('  净收益 =', grossProfitSol.toString(), '-', marginSol.toString());
     const netProfitSol = grossProfitSol.minus(marginSol)
+    console.log('  净收益 (netProfitSol):', netProfitSol.toString(), 'SOL');
 
     // 4. 盈亏百分比 = (净收益 / 保证金) * 100
+    console.log('\n步骤 4: 计算盈亏百分比');
+    console.log('  公式: 盈亏% = (净收益 / 保证金) * 100');
+    console.log('  盈亏% = (', netProfitSol.toString(), '/', marginSol.toString(), ') * 100');
     const profitPercentage = netProfitSol.div(marginSol).mul(100);
+    console.log('  盈亏百分比 (profitPercentage):', profitPercentage.toString(), '%');
 
     // 5. 止损位百分比 = (当前价格 - 开仓价格) / 开仓价格 * 100
+    console.log('\n步骤 5: 计算止损位百分比');
     const startPrice = new Decimal(lock_lp_start_price);
     const currentPrice = new Decimal(latest_price);
+    console.log('  公式: 止损位% = (当前价格 - 开仓价格) / 开仓价格 * 100');
+    console.log('  止损位% = (', currentPrice.toString(), '-', startPrice.toString(), ') /', startPrice.toString(), '* 100');
     const stopLossPercentage = currentPrice.minus(startPrice).div(startPrice).mul(100);
+    console.log('  止损位百分比 (stopLossPercentage):', stopLossPercentage.toString(), '%');
+
+    console.log('\n========== 计算完成 ==========\n');
 
     // 返回做多仓位的计算结果
     return {
@@ -312,11 +355,11 @@ function formatDisplay(data) {
   console.log('开仓时间:', data.openTime);
   console.log('杠杆倍数:', `x${data.leverage}`);
   //console.log('Order Type:', data.orderType);
-  //console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
+  console.log('保证金 (SOL):', data.marginInSol.toFixed(2));
   console.log('保证金 (USDT):', data.marginInUSDT.toFixed(2));
   //console.log('止损位 (%):', data.stopLossPercentage.toFixed(1) + '%');
   //console.log('已实现收益 (SOL):', (data.realizedInSol >= 0 ? '+' : '') + data.realizedInSol.toFixed(2));
-  //console.log('持仓盈亏 (SOL):', (data.netProfitInSol >= 0 ? '+' : '') + data.netProfitInSol.toFixed(2));
+  console.log('持仓盈亏 (SOL):', (data.netProfitInSol >= 0 ? '+' : '') + data.netProfitInSol.toFixed(2));
   console.log('持仓盈亏 (USDT):', (data.netProfitInUSDT >= 0 ? '+' : '') + data.netProfitInUSDT.toFixed(2));
   console.log('持仓盈亏 (%):', (data.profitPercentage >= 0 ? '+' : '') + data.profitPercentage.toFixed(1) + '%');
 }
