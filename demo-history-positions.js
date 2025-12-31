@@ -9,7 +9,7 @@ const { Connection } = require('@solana/web3.js');
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
 const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
-const MINT_ADDRESS = 'B9ziVaRwmoSeYY8a4ChpRoAYeMtuaUKogLoeFxH8r3L4';  // mint 值
+const MINT_ADDRESS = 'Ff6N16aKa4WR2tgxRv4NhcFKrn8wRj9mei7GxWpMV127';  // mint 值
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
@@ -95,11 +95,11 @@ function calculateLeverage(order) {
   let stopLossRatio;
 
   if (order.order_type === 1) {
-    // 做空 (SHORT, order_type=1): 止损比例 = (lock_lp_start_price - open_price) / open_price
-    stopLossRatio = lockLpStartPrice.minus(openPrice).div(openPrice);
-  } else if (order.order_type === 2) {
-    // 做多 (LONG, order_type=2): 止损比例 = (open_price - lock_lp_start_price) / open_price
+    // 做多 (LONG, order_type=1): 止损比例 = (open_price - lock_lp_start_price) / open_price
     stopLossRatio = openPrice.minus(lockLpStartPrice).div(openPrice);
+  } else if (order.order_type === 2) {
+    // 做空 (SHORT, order_type=2): 止损比例 = (lock_lp_start_price - open_price) / open_price
+    stopLossRatio = lockLpStartPrice.minus(openPrice).div(openPrice);
   } else {
     // 未知订单类型
     return 0;
@@ -121,6 +121,68 @@ function calculateLeverage(order) {
 }
 
 /**
+ * 计算做多订单的盈利
+ * @param {object} order - 订单数据
+ * @param {object} close_info - 平仓信息
+ * @param {Decimal} marginInitSol - 初始保证金（SOL，Decimal 类型）
+ * @param {Decimal} solPriceDecimal - SOL 价格（USDT，Decimal 类型）
+ * @returns {object} - 包含 realizedSol, realizedUSDT, profitPercentage
+ */
+function calculateLongProfit(order, close_info, marginInitSol, solPriceDecimal) {
+  // close_reason = 2: 强制清算时,收益直接为 0
+  if (close_info.close_reason === 2) {
+    return {
+      realizedSol: new Decimal(0),
+      realizedUSDT: new Decimal(0),
+      profitPercentage: new Decimal(0)
+    };
+  }
+
+  // 其他情况按原算法计算
+  const realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+  const realizedUSDT = realizedSol.mul(solPriceDecimal);
+  // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
+  const profitPercentage = realizedSol.div(marginInitSol).mul(100);
+
+  return {
+    realizedSol,
+    realizedUSDT,
+    profitPercentage
+  };
+}
+
+/**
+ * 计算做空订单的盈利
+ * @param {object} order - 订单数据
+ * @param {object} close_info - 平仓信息
+ * @param {Decimal} marginInitSol - 初始保证金（SOL，Decimal 类型）
+ * @param {Decimal} solPriceDecimal - SOL 价格（USDT，Decimal 类型）
+ * @returns {object} - 包含 realizedSol, realizedUSDT, profitPercentage
+ */
+function calculateShortProfit(order, close_info, marginInitSol, solPriceDecimal) {
+  // close_reason = 2: 强制清算时,收益直接为 0
+  if (close_info.close_reason === 2) {
+    return {
+      realizedSol: new Decimal(0),
+      realizedUSDT: new Decimal(0),
+      profitPercentage: new Decimal(0)
+    };
+  }
+
+  // 其他情况按原算法计算
+  const realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
+  const realizedUSDT = realizedSol.mul(solPriceDecimal);
+  // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
+  const profitPercentage = realizedSol.div(marginInitSol).mul(100);
+
+  return {
+    realizedSol,
+    realizedUSDT,
+    profitPercentage
+  };
+}
+
+/**
  * 计算历史订单数据
  * @param {object} record - 历史订单记录
  * @param {number} solPrice - SOL 价格（USDT）
@@ -130,10 +192,10 @@ function calculateHistoryData(record, solPrice) {
   const { order, close_info, direction } = record;
 
   // order_type 决定方向
-  // order_type = 1: 做空 (SHORT)
-  // order_type = 2: 做多 (LONG)
-  const isShort = order.order_type === 1;
-  const directionLabel = isShort ? '做空 (SHORT)' : '做多 (LONG)';
+  // order_type = 1: 做多 (LONG)
+  // order_type = 2: 做空 (SHORT)
+  const isLong = order.order_type === 1;
+  const directionLabel = isLong ? '做多 (LONG)' : '做空 (SHORT)';
 
   // 使用 Decimal.js 进行高精度计算
   const marginInitSol = new Decimal(order.margin_init_sol_amount).div(LAMPORTS_PER_SOL);
@@ -143,10 +205,6 @@ function calculateHistoryData(record, solPrice) {
   const leverage = calculateLeverage(order);
 
   // 已实现盈亏（SOL 和 USDT）
-  let realizedSol;
-  let realizedUSDT;
-  let profitPercentage;
-
   // close_reason 说明:
   // 1: 用户主动平仓 / User close
   // 2: 强制清算 / Forced liquidation
@@ -154,18 +212,15 @@ function calculateHistoryData(record, solPrice) {
   // 4: 用户主动平半仓 / User half-close
   // 5: 到期平半仓 / Expired half-close
 
-  if (close_info.close_reason === 2) {
-    // 强制清算时,收益直接为 0
-    realizedSol = new Decimal(0);
-    realizedUSDT = new Decimal(0);
-    profitPercentage = new Decimal(0);
+  // 根据订单类型调用对应的盈利计算函数
+  let profitResult;
+  if (isLong) {
+    profitResult = calculateLongProfit(order, close_info, marginInitSol, solPriceDecimal);
   } else {
-    // 其他情况按原算法计算
-    realizedSol = new Decimal(order.realized_sol_amount || 0).div(LAMPORTS_PER_SOL);
-    realizedUSDT = realizedSol.mul(solPriceDecimal);
-    // 已实现盈亏比例 = (已实现盈亏 / 初始保证金) * 100
-    profitPercentage = realizedSol.div(marginInitSol).mul(100);
+    profitResult = calculateShortProfit(order, close_info, marginInitSol, solPriceDecimal);
   }
+
+  const { realizedSol, realizedUSDT, profitPercentage } = profitResult;
 
   // 保证金（USDT）
   const marginUSDT = marginInitSol.mul(solPriceDecimal);
