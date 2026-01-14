@@ -9,7 +9,7 @@ const { Connection } = require('@solana/web3.js');
 // 常量配置
 const SERVER_URL = 'https://server.ai-hello.cn';  // 服务器地址
 const USER_ADDRESS = 'GKApmS6rzjjj1StwkWWuoXUGPjz7r8owSn8sV47pLzZF';  // 用户地址
-const MINT_ADDRESS = 'FD1UUFo8vaNbtJHKnyDvUX6DxRgvJtGQdNtS7EG8B7DV';  // mint 值
+const MINT_ADDRESS = '5j25cSfvsrDHskZpqgP6fkjSwans1ZFLNE1mY2nfk22e';  // mint 值
 
 // SOL 精度常量
 const SOL_DECIMALS = 9;  // SOL 小数位数
